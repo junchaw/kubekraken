@@ -13,7 +13,9 @@ Kubekraken is a powerful CLI tool that unleashes multiple kubectl commands in pa
 kubekraken --context-filter "us-west-2-prd-.*" k -- rollout restart -n kube-system deploy/coredns
 ```
 
-![kubekraken](docs/screenshot.png)
+<div align="center">
+  <img src="docs/screenshot.png" alt="kubekraken screenshot" width="100%">
+</div>
 
 ## Usage
 
