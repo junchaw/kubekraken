@@ -9,6 +9,49 @@
 
 Kubekraken is a powerful CLI tool that unleashes multiple kubectl commands in parallel—tame your clusters with ease.
 
+```shell
+kubekraken --kubeconfig-files ~/kubeconfigs --kubeconfig-filter "us-west-2.*" k -- rollout restart -n argocd deploy/argocd-server
+```
+
+```shell
+---
+TASK START: /Users/junchawu/kubeconfigs/us-west-2-prd-2.yaml@default (2/3)
+
+STDERR:
+Warning: Use tokens from the TokenRequest API or manually created secret-based tokens instead of auto-generated secret-based tokens.
+
+STDOUT:
+deployment.apps/argocd-server restarted
+
+TASK END: /Users/junchawu/kubeconfigs/us-west-2-prd-2.yaml@default (2/3)
+---
+
+---
+TASK START: /Users/junchawu/kubeconfigs/us-west-2-prd-1.yaml@default (3/3)
+
+ERROR: Connection refused.
+
+TASK END: /Users/junchawu/kubeconfigs/us-west-2-prd-1.yaml@default (3/3)
+---
+
+---
+TASK START: /Users/junchawu/kubeconfigs/us-west-2-prd-3.yaml@default (1/3)
+
+STDOUT:
+deployment.apps/argocd-server restarted
+
+TASK END: /Users/junchawu/kubeconfigs/us-west-2-prd-3.yaml@default (1/3)
+---
+
+---
+SUMMARY:
+- /Users/junchawu/kubeconfigs/us-west-2-prd-1.yaml@default: error: Connection refused.
+- /Users/junchawu/kubeconfigs/us-west-2-prd-2.yaml@default: stderr:
+Warning: Use tokens from the TokenRequest API or manually created secret-based tokens instead of auto-generated secret-based tokens.
+
+2 successful (1 with warnings), 1 error, 3 total
+```
+
 ## Usage
 
 ```shell

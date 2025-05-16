@@ -112,7 +112,7 @@ func (r *Run) processOne(taskItem *RunTarget) {
 	r.Lock.Lock()
 	defer r.Lock.Unlock()
 
-	if result.HasErrorOrWarning() {
+	if result.HasErrorOrWarning() || !r.Options.NoStdout {
 		fmt.Printf("\n---\nTASK START: %s (%d/%d)\n\n", taskItem.ID, taskItem.Index, len(r.Options.Targets))
 
 		if result.Err != nil {
@@ -175,7 +175,7 @@ func (r *Run) processOne(taskItem *RunTarget) {
 		}
 	}
 
-	if result.HasErrorOrWarning() {
+	if result.HasErrorOrWarning() || !r.Options.NoStdout {
 		fmt.Printf("\nTASK END: %s (%d/%d)\n---\n", taskItem.ID, taskItem.Index, len(r.Options.Targets))
 	}
 
