@@ -71,14 +71,11 @@ func NewKrakenCmd() *cobra.Command {
 
 			opts.Targets = []executor.RunTarget{}
 
-			for _, kubeconfigFile := range opts.KubeconfigFiles {
-				if opts.KubeconfigFilterRegex != nil && !opts.KubeconfigFilterRegex.MatchString(kubeconfigFile) {
-					continue
-				}
-
-				targets, err := ParseKubeconfigFileOrDir(logger, kubeconfigFile, opts.KubeconfigFilterRegex, opts.UseCurrentContext, opts.ContextFilterRegex)
+			for _, kubeconfigFileOrDir := range opts.KubeconfigFiles {
+				// Note that kubeconfig filter does not apply here, but applied to files under the directory
+				targets, err := ParseKubeconfigFileOrDir(logger, kubeconfigFileOrDir, opts.KubeconfigFilterRegex, opts.UseCurrentContext, opts.ContextFilterRegex)
 				if err != nil {
-					logger.Fatalf("failed to parse kubeconfig file or directory %s: %v", kubeconfigFile, err)
+					logger.Fatalf("failed to parse kubeconfig file or directory %s: %v", kubeconfigFileOrDir, err)
 				}
 				opts.Targets = append(opts.Targets, targets...)
 			}
@@ -87,7 +84,7 @@ func NewKrakenCmd() *cobra.Command {
 
 	// Add flags
 	cmd.PersistentFlags().StringSliceVar(&opts.KubeconfigFiles, "kubeconfig-files", []string{os.Getenv("KUBECONFIG")}, "Kubeconfig files, item could be directory or file, in case of directory, all files in the directory will be used, see --kubeconfig-filter")
-	cmd.PersistentFlags().StringVar(&opts.KubeconfigFilter, "kubeconfig-filter", "", "Regex filter for kubeconfig files, used with kubeconfig from directory (e.g. .*\\.yaml)")
+	cmd.PersistentFlags().StringVar(&opts.KubeconfigFilter, "kubeconfig-filter", "", "Regex filter for kubeconfig files, used with kubeconfig from directory, will not filter items specified in --kubeconfig-files (e.g. prd-.*\\.yaml)")
 	cmd.PersistentFlags().BoolVar(&opts.UseCurrentContext, "use-current-context", false, "Only use the current context from the kubeconfig file, if set, --kubeconfig-filter will be ignored")
 	cmd.PersistentFlags().StringVar(&opts.ContextFilter, "context-filter", "", "Regex filter for context names (e.g. prd-.*), see --use-current-context if you want to use the default context")
 
