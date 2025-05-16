@@ -1,27 +1,62 @@
 package cmd
 
 import (
-	"fmt"
 	"os"
 	"regexp"
 
+	"github.com/junchaw/kubekraken/pkg/executor"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
 var opts KrakenOptions
 
-var logger = logrus.New()
+var logger = &logrus.Logger{
+	Out:       os.Stderr,
+	Formatter: new(logrus.TextFormatter),
+	Level:     logrus.WarnLevel,
+}
+
+func init() {
+	level, err := logrus.ParseLevel(os.Getenv("LOG_LEVEL"))
+	if err != nil {
+		logger.Level = logrus.WarnLevel
+	} else {
+		logger.Level = level
+	}
+}
+
+type KrakenOptions struct {
+	KubeconfigFiles   []string
+	KubeconfigFilter  string
+	UseCurrentContext bool
+	ContextFilter     string
+
+	Workers int
+
+	OutputDir  string
+	OutputFile string
+	NoStdout   bool
+
+	// KubeconfigFilterRegex is the regex filter for kubeconfig files, parsed after reading arguments and before running commands
+	KubeconfigFilterRegex *regexp.Regexp
+
+	// ContextFilterRegex is the regex filter for context names, parsed after reading arguments and before running commands
+	ContextFilterRegex *regexp.Regexp
+
+	// Targets is a list of contexts, parsed after reading arguments and before running commands
+	Targets []executor.RunTarget
+}
 
 func NewKrakenCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "kraken",
 		Short: "Run command to multiple clusters",
-		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		PersistentPreRun: func(cmd *cobra.Command, args []string) {
 			if opts.KubeconfigFilter != "" {
 				re, err := regexp.Compile(opts.KubeconfigFilter)
 				if err != nil {
-					return fmt.Errorf("failed to compile kubeconfig filter: %v", err)
+					logger.Fatalf("failed to compile kubeconfig filter: %v", err)
 				}
 				opts.KubeconfigFilterRegex = re
 			}
@@ -29,37 +64,42 @@ func NewKrakenCmd() *cobra.Command {
 			if opts.ContextFilter != "" {
 				re, err := regexp.Compile(opts.ContextFilter)
 				if err != nil {
-					return fmt.Errorf("failed to compile context filter: %v", err)
+					logger.Fatalf("failed to compile context filter: %v", err)
 				}
 				opts.ContextFilterRegex = re
 			}
 
-			opts.Contexts = []Context{}
+			opts.Targets = []executor.RunTarget{}
 
 			for _, kubeconfigFile := range opts.KubeconfigFiles {
 				if opts.KubeconfigFilterRegex != nil && !opts.KubeconfigFilterRegex.MatchString(kubeconfigFile) {
 					continue
 				}
 
-				contexts, err := ParseKubeconfigFileOrDir(kubeconfigFile, opts.KubeconfigFilterRegex, opts.UseCurrentContext, opts.ContextFilterRegex)
+				targets, err := ParseKubeconfigFileOrDir(logger, kubeconfigFile, opts.KubeconfigFilterRegex, opts.UseCurrentContext, opts.ContextFilterRegex)
 				if err != nil {
-					return fmt.Errorf("failed to parse kubeconfig file or directory %s: %v", kubeconfigFile, err)
+					logger.Fatalf("failed to parse kubeconfig file or directory %s: %v", kubeconfigFile, err)
 				}
-				opts.Contexts = append(opts.Contexts, contexts...)
+				opts.Targets = append(opts.Targets, targets...)
 			}
-
-			return nil
 		},
 	}
-
-	// Add subcommands
-	cmd.AddCommand(NewListContextsCmd(&opts))
 
 	// Add flags
 	cmd.PersistentFlags().StringSliceVar(&opts.KubeconfigFiles, "kubeconfig-files", []string{os.Getenv("KUBECONFIG")}, "Kubeconfig files, item could be directory or file, in case of directory, all files in the directory will be used, see --kubeconfig-filter")
 	cmd.PersistentFlags().StringVar(&opts.KubeconfigFilter, "kubeconfig-filter", "", "Regex filter for kubeconfig files, used with kubeconfig from directory (e.g. .*\\.yaml)")
 	cmd.PersistentFlags().BoolVar(&opts.UseCurrentContext, "use-current-context", false, "Only use the current context from the kubeconfig file, if set, --kubeconfig-filter will be ignored")
 	cmd.PersistentFlags().StringVar(&opts.ContextFilter, "context-filter", "", "Regex filter for context names (e.g. prd-.*), see --use-current-context if you want to use the default context")
+
+	cmd.PersistentFlags().IntVar(&opts.Workers, "workers", 10, "Number of workers to run concurrently")
+
+	cmd.PersistentFlags().StringVar(&opts.OutputDir, "output-dir", "", "Output directory for the results, will be ignored if --output-file is set")
+	cmd.PersistentFlags().StringVar(&opts.OutputFile, "output-file", "", "Output file for the results, has higher priority than --output-dir")
+	cmd.PersistentFlags().BoolVar(&opts.NoStdout, "no-stdout", false, "Do not print kubectl stdout (stderr will still be printed), will be ignored if --output-file or --output-dir is set")
+
+	// Add subcommands
+	cmd.AddCommand(NewListContextsCmd(&opts))
+	cmd.AddCommand(NewKubectlCmd(&opts))
 
 	return cmd
 }

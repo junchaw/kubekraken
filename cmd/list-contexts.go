@@ -10,11 +10,10 @@ func NewListContextsCmd(opts *KrakenOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list-contexts",
 		Short: "List available Kubernetes contexts",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			for _, context := range opts.Contexts {
+		Run: func(cmd *cobra.Command, args []string) {
+			for _, context := range opts.Targets {
 				fmt.Printf("%s - %s\n", context.Kubeconfig, context.Context)
 			}
-			return nil
 		},
 	}
 

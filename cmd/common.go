@@ -7,13 +7,10 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/junchaw/kubekraken/pkg/executor"
+	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
 )
-
-type Context struct {
-	Kubeconfig string
-	Context    string
-}
 
 // KubeconfigFile represents the structure of a kubeconfig file
 type KubeconfigFile struct {
@@ -28,23 +25,14 @@ type KubeconfigFile struct {
 	} `yaml:"contexts"`
 }
 
-type KrakenOptions struct {
-	KubeconfigFiles   []string
-	KubeconfigFilter  string
-	UseCurrentContext bool
-	ContextFilter     string
+func ParseKubeconfigFile(
+	logger *logrus.Logger,
+	kubeconfigFile string,
+	useCurrentContext bool,
+	contextFilterRegex *regexp.Regexp,
+) (targets []executor.RunTarget, err error) {
+	logger.Infof("Parsing kubeconfig file %s", kubeconfigFile)
 
-	// KubeconfigFilterRegex is the regex filter for kubeconfig files, parsed after reading arguments and before running commands
-	KubeconfigFilterRegex *regexp.Regexp
-
-	// ContextFilterRegex is the regex filter for context names, parsed after reading arguments and before running commands
-	ContextFilterRegex *regexp.Regexp
-
-	// Contexts is a list of contexts, parsed after reading arguments and before running commands
-	Contexts []Context
-}
-
-func ParseKubeconfigFile(kubeconfigFile string, useCurrentContext bool, contextFilterRegex *regexp.Regexp) (contexts []Context, err error) {
 	data, err := os.ReadFile(kubeconfigFile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read kubeconfig file %s: %v", kubeconfigFile, err)
@@ -59,44 +47,54 @@ func ParseKubeconfigFile(kubeconfigFile string, useCurrentContext bool, contextF
 		// If useCurrentContext is true, only include the current context
 		if useCurrentContext {
 			if ctx.Name == config.CurrentContext {
-				contexts = append(contexts, Context{
-					Kubeconfig: kubeconfigFile,
-					Context:    ctx.Name,
-				})
+				logger.Infof("Found current context in kubeconfig file %s: %s", kubeconfigFile, ctx.Name)
+				targets = append(targets, executor.NewTarget(kubeconfigFile, ctx.Name))
+			} else {
+				logger.Debugf("Skipping context %s in kubeconfig file %s", ctx.Name, kubeconfigFile)
 			}
 		} else {
 			// if useCurrentContext is false
 
 			// If contextFilterRegex is not provided, include all contexts
 			if contextFilterRegex == nil || contextFilterRegex.MatchString(ctx.Name) {
-				contexts = append(contexts, Context{
-					Kubeconfig: kubeconfigFile,
-					Context:    ctx.Name,
-				})
+				logger.Infof("Found context matching filter in kubeconfig file %s: %s", kubeconfigFile, ctx.Name)
+				targets = append(targets, executor.NewTarget(kubeconfigFile, ctx.Name))
+			} else {
+				logger.Debugf("Skipping context %s in kubeconfig file %s", ctx.Name, kubeconfigFile)
 			}
 		}
 	}
 
-	return contexts, nil
+	return targets, nil
 }
 
-func ParseKubeconfigFileOrDir(kubeconfigFileOrDir string, kubeconfigFilterRegex *regexp.Regexp, useCurrentContext bool, contextFilterRegex *regexp.Regexp) (contexts []Context, err error) {
+func ParseKubeconfigFileOrDir(
+	logger *logrus.Logger,
+	kubeconfigFileOrDir string,
+	kubeconfigFilterRegex *regexp.Regexp,
+	useCurrentContext bool,
+	contextFilterRegex *regexp.Regexp,
+) (targets []executor.RunTarget, err error) {
+	logger.Infof("Parsing kubeconfig file or directory %s", kubeconfigFileOrDir)
+
 	if strings.HasPrefix(kubeconfigFileOrDir, "~") {
 		kubeconfigFileOrDir = strings.Replace(kubeconfigFileOrDir, "~", os.Getenv("HOME"), 1)
 	}
 
 	if _, err := os.Stat(kubeconfigFileOrDir); os.IsNotExist(err) {
 		logger.Warnf("kubeconfig file %s does not exist", kubeconfigFileOrDir)
-		return []Context{}, nil
+		return []executor.RunTarget{}, nil
 	}
 
 	info, err := os.Stat(kubeconfigFileOrDir)
 	if err != nil {
 		logger.Warnf("failed to stat kubeconfig file %s: %v", kubeconfigFileOrDir, err)
-		return []Context{}, nil
+		return []executor.RunTarget{}, nil
 	}
 
 	if info.IsDir() {
+		logger.Infof("Parsing kubeconfig directory %s", kubeconfigFileOrDir)
+
 		files, err := os.ReadDir(kubeconfigFileOrDir)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read directory %s: %v", kubeconfigFileOrDir, err)
@@ -110,17 +108,17 @@ func ParseKubeconfigFileOrDir(kubeconfigFileOrDir string, kubeconfigFilterRegex 
 				continue
 			}
 
-			contextsInFile, err := ParseKubeconfigFile(filepath.Join(kubeconfigFileOrDir, file.Name()), useCurrentContext, contextFilterRegex)
+			targetsInFile, err := ParseKubeconfigFile(logger, filepath.Join(kubeconfigFileOrDir, file.Name()), useCurrentContext, contextFilterRegex)
 			if err != nil {
 				return nil, fmt.Errorf("failed to parse kubeconfig file %s: %v", filepath.Join(kubeconfigFileOrDir, file.Name()), err)
 			}
-			contexts = append(contexts, contextsInFile...)
+			targets = append(targets, targetsInFile...)
 		}
-		return contexts, nil
+		return targets, nil
 	}
 
 	// is file
-	contextsInFile, err := ParseKubeconfigFile(kubeconfigFileOrDir, useCurrentContext, contextFilterRegex)
+	contextsInFile, err := ParseKubeconfigFile(logger, kubeconfigFileOrDir, useCurrentContext, contextFilterRegex)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse kubeconfig file %s: %v", kubeconfigFileOrDir, err)
 	}
