@@ -91,7 +91,7 @@ func NewKrakenCmd() *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&opts.UseCurrentContext, "use-current-context", false, "Only use the current context from the kubeconfig file, if set, --kubeconfig-filter will be ignored")
 	cmd.PersistentFlags().StringVar(&opts.ContextFilter, "context-filter", "", "Regex filter for context names (e.g. prd-.*), see --use-current-context if you want to use the default context")
 
-	cmd.PersistentFlags().IntVar(&opts.Workers, "workers", 10, "Number of workers to run concurrently")
+	cmd.PersistentFlags().IntVar(&opts.Workers, "workers", 99, "Number of workers to run concurrently")
 
 	cmd.PersistentFlags().StringVar(&opts.OutputDir, "output-dir", "", "Output directory for the results, will be ignored if --output-file is set")
 	cmd.PersistentFlags().StringVar(&opts.OutputFile, "output-file", "", "Output file for the results, has higher priority than --output-dir")
