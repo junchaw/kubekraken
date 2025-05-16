@@ -27,6 +27,9 @@ type RunTarget struct {
 	ID         string
 	Kubeconfig string
 	Context    string
+
+	// Index is the index of the target during execution, will be set during execution
+	Index int
 }
 
 func NewTarget(kubeconfig, context string) RunTarget {
@@ -110,7 +113,7 @@ func (r *Run) processOne(taskItem *RunTarget) {
 	defer r.Lock.Unlock()
 
 	if result.HasErrorOrWarning() {
-		fmt.Printf("\n---\nTASK START: %s (%d/%d)\n\n", taskItem.ID, r.Counter, len(r.Options.Targets))
+		fmt.Printf("\n---\nTASK START: %s (%d/%d)\n\n", taskItem.ID, taskItem.Index, len(r.Options.Targets))
 
 		if result.Err != nil {
 			fmt.Printf("\nERROR:\n%v\n", result.Err)
@@ -122,7 +125,7 @@ func (r *Run) processOne(taskItem *RunTarget) {
 	}
 
 	if r.Options.OutputFile != "" {
-		output := fmt.Appendf(nil, "\n---\nTASK START: %s (%d/%d)\n", taskItem.ID, r.Counter, len(r.Options.Targets))
+		output := fmt.Appendf(nil, "\n---\nTASK START: %s (%d/%d)\n", taskItem.ID, taskItem.Index, len(r.Options.Targets))
 
 		if result.Err != nil {
 			output = append(output, fmt.Appendf(nil, "\nERROR:\n%v\n", result.Err)...)
@@ -136,7 +139,7 @@ func (r *Run) processOne(taskItem *RunTarget) {
 			output = fmt.Appendf(output, "\nSTDOUT:\n%s", string(result.Stdout))
 		}
 
-		output = fmt.Appendf(output, "\nTASK END: %s (%d/%d)\n---\n", taskItem.ID, r.Counter, len(r.Options.Targets))
+		output = fmt.Appendf(output, "\nTASK END: %s (%d/%d)\n---\n", taskItem.ID, taskItem.Index, len(r.Options.Targets))
 
 		f, err := os.OpenFile(r.Options.OutputFile, os.O_APPEND|os.O_WRONLY, 0600)
 		if err != nil {
@@ -173,7 +176,7 @@ func (r *Run) processOne(taskItem *RunTarget) {
 	}
 
 	if result.HasErrorOrWarning() {
-		fmt.Printf("\nTASK END: %s (%d/%d)\n---\n", taskItem.ID, r.Counter, len(r.Options.Targets))
+		fmt.Printf("\nTASK END: %s (%d/%d)\n---\n", taskItem.ID, taskItem.Index, len(r.Options.Targets))
 	}
 
 	r.Results[taskItem.ID] = *result
@@ -190,6 +193,7 @@ func (r *Run) startWorker(stopCh <-chan struct{}) {
 		case taskItem := <-r.NextTarget:
 			r.Lock.Lock()
 			r.Counter++
+			taskItem.Index = r.Counter
 			r.Lock.Unlock()
 			r.processOne(taskItem)
 		}
