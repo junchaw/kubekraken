@@ -251,7 +251,7 @@ func (r *Run) Run() error {
 			fmt.Printf("- %s: error: %v%s\n", result.TaskItem.ID, result.Err, stderrStub)
 		} else if len(result.Stderr) > 0 {
 			warnCount++
-			fmt.Printf("- %s: stderr: \n%v\n", result.TaskItem.ID, result.Stderr)
+			fmt.Printf("- %s: stderr: \n%v\n", result.TaskItem.ID, string(result.Stderr))
 		}
 	}
 
