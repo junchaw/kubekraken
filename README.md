@@ -1,5 +1,9 @@
 # KubeKraken
 
+<div align="center">
+  <img src="docs/logo.png" alt="kubekraken logo" width="200">
+</div>
+
 [![Docker Pulls](https://img.shields.io/docker/pulls/junchaw/kubekraken.svg)](https://hub.docker.com/r/junchaw/kubekraken/)
 [![Release a tag](https://github.com/junchaw/kubekraken/actions/workflows/release.yml/badge.svg)](https://github.com/junchaw/kubekraken/actions/workflows/release.yml)
 
