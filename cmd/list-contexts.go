@@ -11,8 +11,8 @@ func NewListContextsCmd(opts *KrakenOptions) *cobra.Command {
 		Use:   "list-contexts",
 		Short: "List available Kubernetes contexts",
 		Run: func(cmd *cobra.Command, args []string) {
-			for _, context := range opts.Targets {
-				fmt.Printf("%s - %s\n", context.Kubeconfig, context.Context)
+			for i, context := range opts.Targets {
+				fmt.Printf("[%d/%d] %s@%s\n", i+1, len(opts.Targets), context.Kubeconfig, context.Context)
 			}
 		},
 	}

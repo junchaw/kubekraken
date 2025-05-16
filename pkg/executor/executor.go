@@ -61,6 +61,8 @@ type Run struct {
 
 	NextTarget chan *RunTarget
 
+	Counter int
+
 	Results map[string]RunResult
 
 	Logger *logrus.Logger
@@ -108,7 +110,7 @@ func (r *Run) processOne(taskItem *RunTarget) {
 	defer r.Lock.Unlock()
 
 	if result.HasErrorOrWarning() {
-		fmt.Printf("\n---\nTASK START: %s\n\n", taskItem.ID)
+		fmt.Printf("\n---\nTASK START: %s (%d/%d)\n\n", taskItem.ID, r.Counter, len(r.Options.Targets))
 
 		if result.Err != nil {
 			fmt.Printf("\nERROR:\n%v\n", result.Err)
@@ -120,7 +122,7 @@ func (r *Run) processOne(taskItem *RunTarget) {
 	}
 
 	if r.Options.OutputFile != "" {
-		output := fmt.Appendf(nil, "\n---\nTASK START: %s\n", taskItem.ID)
+		output := fmt.Appendf(nil, "\n---\nTASK START: %s (%d/%d)\n", taskItem.ID, r.Counter, len(r.Options.Targets))
 
 		if result.Err != nil {
 			output = append(output, fmt.Appendf(nil, "\nERROR:\n%v\n", result.Err)...)
@@ -134,7 +136,7 @@ func (r *Run) processOne(taskItem *RunTarget) {
 			output = fmt.Appendf(output, "\nSTDOUT:\n%s", string(result.Stdout))
 		}
 
-		output = fmt.Appendf(output, "\nTASK END: %s\n---\n", taskItem.ID)
+		output = fmt.Appendf(output, "\nTASK END: %s (%d/%d)\n---\n", taskItem.ID, r.Counter, len(r.Options.Targets))
 
 		f, err := os.OpenFile(r.Options.OutputFile, os.O_APPEND|os.O_WRONLY, 0600)
 		if err != nil {
@@ -171,7 +173,7 @@ func (r *Run) processOne(taskItem *RunTarget) {
 	}
 
 	if result.HasErrorOrWarning() {
-		fmt.Printf("\nTASK END: %s\n---\n", taskItem.ID)
+		fmt.Printf("\nTASK END: %s (%d/%d)\n---\n", taskItem.ID, r.Counter, len(r.Options.Targets))
 	}
 
 	r.Results[taskItem.ID] = *result
@@ -186,6 +188,9 @@ func (r *Run) startWorker(stopCh <-chan struct{}) {
 		case <-stopCh:
 			return
 		case taskItem := <-r.NextTarget:
+			r.Lock.Lock()
+			r.Counter++
+			r.Lock.Unlock()
 			r.processOne(taskItem)
 		}
 	}
@@ -224,9 +229,7 @@ func (r *Run) Run() error {
 		go r.startWorker(stopCh)
 	}
 
-	for i, target := range r.Options.Targets {
-		r.Logger.Infof("[%d/%d] starting to process task %s",
-			i+1, len(r.Options.Targets), target.ID)
+	for _, target := range r.Options.Targets {
 		r.NextTarget <- &target
 	}
 
