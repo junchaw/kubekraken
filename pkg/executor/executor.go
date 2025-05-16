@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"strings"
 	"sync"
 
 	"github.com/junchaw/kubekraken/pkg/utils"
@@ -112,15 +113,23 @@ func (r *Run) processOne(taskItem *RunTarget) {
 	r.Lock.Lock()
 	defer r.Lock.Unlock()
 
-	if result.HasErrorOrWarning() || !r.Options.NoStdout {
-		fmt.Printf("\n---\nTASK START: %s (%d/%d)\n\n", taskItem.ID, taskItem.Index, len(r.Options.Targets))
+	writeToFile := (r.Options.OutputFile != "" || r.Options.OutputDir != "")
+	writeToStdout := !writeToFile && !r.Options.NoStdout
+
+	if (writeToFile && result.HasErrorOrWarning()) || writeToStdout {
+		fmt.Println()
+		fmt.Println()
+		fmt.Println(utils.Style.Dim.Render("---"))
+		fmt.Println(utils.Style.Text.Render(fmt.Sprintf("TASK START: %s (%d/%d)", taskItem.ID, taskItem.Index, len(r.Options.Targets))))
 
 		if result.Err != nil {
-			fmt.Printf("\nERROR:\n%v\n", result.Err)
+			fmt.Println(utils.Style.Warning.Render("ERROR:"))
+			fmt.Println(utils.Style.Warning.Render(result.Err.Error()))
 		}
 
 		if len(result.Stderr) > 0 {
-			fmt.Printf("\nSTDERR:\n%s\n", string(result.Stderr))
+			fmt.Println(utils.Style.Warning.Render("STDERR:"))
+			fmt.Println(utils.Style.Warning.Render(strings.TrimSpace(string(result.Stderr))))
 		}
 	}
 
@@ -128,15 +137,15 @@ func (r *Run) processOne(taskItem *RunTarget) {
 		output := fmt.Appendf(nil, "\n---\nTASK START: %s (%d/%d)\n", taskItem.ID, taskItem.Index, len(r.Options.Targets))
 
 		if result.Err != nil {
-			output = append(output, fmt.Appendf(nil, "\nERROR:\n%v\n", result.Err)...)
+			output = append(output, fmt.Appendf(nil, "\nERROR: %v\n", result.Err)...)
 		}
 
 		if len(result.Stderr) > 0 {
-			output = fmt.Appendf(output, "\nSTDERR:\n%s", string(result.Stderr))
+			output = fmt.Appendf(output, "\nSTDERR:\n%s\n", strings.TrimSpace(string(result.Stderr)))
 		}
 
 		if len(result.Stdout) > 0 {
-			output = fmt.Appendf(output, "\nSTDOUT:\n%s", string(result.Stdout))
+			output = fmt.Appendf(output, "\nSTDOUT:\n%s\n", strings.TrimSpace(string(result.Stdout)))
 		}
 
 		output = fmt.Appendf(output, "\nTASK END: %s (%d/%d)\n---\n", taskItem.ID, taskItem.Index, len(r.Options.Targets))
@@ -170,13 +179,15 @@ func (r *Run) processOne(taskItem *RunTarget) {
 		}
 	} else {
 		// no output target specified, print to stdout
-		if !r.Options.NoStdout {
-			fmt.Printf("\nSTDOUT:\n%s\n", string(result.Stdout))
+		if !r.Options.NoStdout && len(result.Stdout) > 0 {
+			fmt.Println(utils.Style.Info.Render("STDOUT:"))
+			fmt.Println(utils.Style.Info.Render(strings.TrimSpace(string(result.Stdout))))
 		}
 	}
 
-	if result.HasErrorOrWarning() || !r.Options.NoStdout {
-		fmt.Printf("\nTASK END: %s (%d/%d)\n---\n", taskItem.ID, taskItem.Index, len(r.Options.Targets))
+	if (writeToFile && result.HasErrorOrWarning()) || writeToStdout {
+		fmt.Println(utils.Style.Text.Render(fmt.Sprintf("TASK END: %s (%d/%d)", taskItem.ID, taskItem.Index, len(r.Options.Targets))))
+		fmt.Println(utils.Style.Dim.Render("---"))
 	}
 
 	r.Results[taskItem.ID] = *result
@@ -244,33 +255,43 @@ func (r *Run) Run() error {
 
 	errCount := 0
 	warnCount := 0
-	fmt.Printf("\n---\nSUMMARY:\n")
+	fmt.Println()
+	fmt.Println()
+	fmt.Println(utils.Style.Dim.Render("---"))
+	fmt.Println(utils.Style.Text.Render("SUMMARY:"))
 	for _, result := range r.Results {
 		if result.Err != nil {
 			errCount++
 			stderrStub := ""
 			if len(result.Stderr) > 0 {
-				stderrStub = fmt.Sprintf("\nstderr: %v", string(result.Stderr))
+				stderrStub = ", stderr:"
 			}
-			fmt.Printf("- %s: error: %v%s\n", result.TaskItem.ID, result.Err, stderrStub)
+			fmt.Println(utils.Style.Warning.Render(fmt.Sprintf("- %s: error: %v%s", result.TaskItem.ID, result.Err.Error(), stderrStub)))
+			if len(result.Stderr) > 0 {
+				fmt.Println(utils.Style.Warning.Render(strings.TrimSpace(string(result.Stderr))))
+			}
+			fmt.Println()
 		} else if len(result.Stderr) > 0 {
 			warnCount++
-			fmt.Printf("- %s: stderr: \n%v\n", result.TaskItem.ID, string(result.Stderr))
+			fmt.Println(utils.Style.Warning.Render(fmt.Sprintf("- %s: stderr:", result.TaskItem.ID)))
+			fmt.Println(utils.Style.Warning.Render(strings.TrimSpace(string(result.Stderr))))
+			fmt.Println()
 		}
 	}
 
-	fmt.Printf("\n%d successful (%d with warnings), %d error, %d total\n",
+	summaryText := fmt.Sprintf("%d successful (%d with warnings), %d error, %d total",
 		len(r.Results)-errCount, warnCount, errCount, len(r.Results))
+	fmt.Printf("\n%s\n", utils.Style.Text.Render(summaryText))
 
 	if r.Options.OutputDir != "" {
-		fmt.Printf("all results are saved to %s\n", r.Options.OutputDir)
+		fmt.Printf("%s\n", utils.Style.Success.Render(fmt.Sprintf("all results are saved to %s", r.Options.OutputDir)))
 	}
 
 	if r.Options.OutputFile != "" {
-		fmt.Printf("all results are saved to %s\n", r.Options.OutputFile)
+		fmt.Printf("%s\n", utils.Style.Success.Render(fmt.Sprintf("all results are saved to %s", r.Options.OutputFile)))
 	}
 
-	fmt.Printf("---\n")
+	fmt.Printf("%s\n", utils.Style.Dim.Render("---"))
 
 	if errCount > 0 {
 		return errors.New("not all clusters were processed successfully")
