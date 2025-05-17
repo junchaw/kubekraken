@@ -1,138 +1,58 @@
 package executor
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path"
-	"strings"
+	"sync"
 
 	"github.com/junchaw/kubekraken/pkg/utils"
+	"github.com/sirupsen/logrus"
+	"gopkg.in/yaml.v2"
 )
 
-func (r *Run) processOneResult(taskItem *RunTarget) *RunResult {
-	var args []string
-	args = append(args, "--kubeconfig", taskItem.Kubeconfig)
-	args = append(args, "--context", taskItem.Context)
-	args = append(args, r.Options.Args...)
-	stdout, stderr, err := utils.Exec("kubectl", args...)
-	if err != nil {
-		return &RunResult{
-			TaskItem: taskItem,
-			Err:      err,
-			Stdout:   stdout,
-			Stderr:   stderr,
-		}
-	}
+type RunOptions struct {
+	Targets []Target
 
-	return &RunResult{
-		TaskItem: taskItem,
-		Err:      nil,
-		Stdout:   stdout,
-		Stderr:   stderr,
-	}
+	Args []string
+
+	Workers int
+
+	OutputDir    string
+	OutputFile   string
+	OutputFormat string
+	NoStdout     bool
+
+	Logger *logrus.Logger
 }
 
-func (r *Run) processOne(taskItem *RunTarget) {
-	result := r.processOneResult(taskItem)
+type Run struct {
+	Options *RunOptions
+
+	Wg sync.WaitGroup
 
 	// Lock is used to avoid race condition when writing to stdout/stderr and files
-	r.Lock.Lock()
-	defer r.Lock.Unlock()
+	Lock sync.Mutex
 
-	if result.HasErrorOrWarning() || !r.Options.NoStdout {
-		fmt.Println()
-		fmt.Println()
-		fmt.Println(utils.Style.Dim.Render("---"))
-		fmt.Println(utils.Style.Text.Render(fmt.Sprintf("TASK START: %s (%d/%d)", taskItem.ID, taskItem.Index, len(r.Options.Targets))))
+	NextTarget chan *Target
 
-		if result.Err != nil {
-			fmt.Println(utils.Style.Warning.Render("ERROR:"))
-			fmt.Println(utils.Style.Warning.Render(result.Err.Error()))
-		}
+	Counter int
 
-		if len(result.Stderr) > 0 {
-			fmt.Println(utils.Style.Warning.Render("STDERR:"))
-			fmt.Println(utils.Style.Warning.Render(strings.TrimSpace(string(result.Stderr))))
-		}
-	}
+	Results map[string]TaskResult
 
-	if r.Options.OutputFile != "" {
-		output := fmt.Appendf(nil, "\n---\nTASK START: %s (%d/%d)\n", taskItem.ID, taskItem.Index, len(r.Options.Targets))
-
-		if result.Err != nil {
-			output = append(output, fmt.Appendf(nil, "\nERROR: %v\n", result.Err)...)
-		}
-
-		if len(result.Stderr) > 0 {
-			output = fmt.Appendf(output, "\nSTDERR:\n%s\n", strings.TrimSpace(string(result.Stderr)))
-		}
-
-		if len(result.Stdout) > 0 {
-			output = fmt.Appendf(output, "\nSTDOUT:\n%s\n", strings.TrimSpace(string(result.Stdout)))
-		}
-
-		output = fmt.Appendf(output, "\nTASK END: %s (%d/%d)\n---\n", taskItem.ID, taskItem.Index, len(r.Options.Targets))
-
-		f, err := os.OpenFile(r.Options.OutputFile, os.O_APPEND|os.O_WRONLY, 0600)
-		if err != nil {
-			r.Logger.Fatalf("failed to open output file: %v", err)
-		}
-		defer f.Close()
-
-		if _, err := f.Write(output); err != nil {
-			r.Logger.Fatalf("failed to append result to file: %v", err)
-		}
-	}
-	if r.Options.OutputDir != "" {
-		errFile := path.Join(r.Options.OutputDir, result.TaskItem.ID+".err.txt")
-		stdoutFile := path.Join(r.Options.OutputDir, result.TaskItem.ID+".stdout.txt")
-		stderrFile := path.Join(r.Options.OutputDir, result.TaskItem.ID+".stderr.txt")
-
-		if result.Err != nil {
-			if err := os.WriteFile(errFile, []byte(result.Err.Error()), 0600); err != nil {
-				r.Logger.Fatalf("failed to write err to file: %v", err)
-			}
-		}
-
-		if err := os.WriteFile(stdoutFile, result.Stdout, 0600); err != nil {
-			r.Logger.Fatalf("failed to write stdout to file: %v", err)
-		}
-
-		if err := os.WriteFile(stderrFile, result.Stderr, 0600); err != nil {
-			r.Logger.Fatalf("failed to write stderr to file: %v", err)
-		}
-	}
-	if !r.Options.NoStdout {
-		if len(result.Stdout) > 0 {
-			fmt.Println(utils.Style.Info.Render("STDOUT:"))
-			fmt.Println(utils.Style.Info.Render(strings.TrimSpace(string(result.Stdout))))
-		}
-	}
-
-	if result.HasErrorOrWarning() || !r.Options.NoStdout {
-		fmt.Println(utils.Style.Text.Render(fmt.Sprintf("TASK END: %s (%d/%d)", taskItem.ID, taskItem.Index, len(r.Options.Targets))))
-		fmt.Println(utils.Style.Dim.Render("---"))
-	}
-
-	r.Results[taskItem.ID] = *result
+	Logger *logrus.Logger
 }
 
-func (r *Run) startWorker(stopCh <-chan struct{}) {
-	r.Wg.Add(1)
-	defer r.Wg.Done()
-
-	for {
-		select {
-		case <-stopCh:
-			return
-		case taskItem := <-r.NextTarget:
-			r.Lock.Lock()
-			r.Counter++
-			taskItem.Index = r.Counter
-			r.Lock.Unlock()
-			r.processOne(taskItem)
-		}
+func NewRun(opts *RunOptions) *Run {
+	return &Run{
+		Options:    opts,
+		Wg:         sync.WaitGroup{},
+		Lock:       sync.Mutex{},
+		NextTarget: make(chan *Target),
+		Results:    make(map[string]TaskResult),
+		Logger:     opts.Logger,
 	}
 }
 
@@ -182,92 +102,76 @@ func (r *Run) Run() error {
 	r.Logger.Infof("waiting for workers to exit")
 	r.Wg.Wait()
 
-	errCount := 0
-	warnCount := 0
-	summaryLines := []utils.StyleText{
-		{Text: ""},
-		{Text: ""},
-		{Text: "---", Style: &utils.Style.Dim},
-		{Text: "SUMMARY:", Style: &utils.Style.Text},
+	summary := RunSummary{
+		Errors:       []TaskResult{},
+		ErrorCount:   0,
+		Warnings:     []TaskResult{},
+		WarningCount: 0,
+		TotalCount:   len(r.Results),
 	}
 	for _, result := range r.Results {
-		if result.Err != nil {
-			errCount++
-			stderrStub := ""
-			if len(result.Stderr) > 0 {
-				stderrStub = ", stderr:"
-			}
-			summaryLines = append(summaryLines, utils.StyleText{
-				Text:  fmt.Sprintf("- %s: error: %v%s", result.TaskItem.ID, result.Err.Error(), stderrStub),
-				Style: &utils.Style.Warning,
-			})
-			if len(result.Stderr) > 0 {
-				summaryLines = append(summaryLines,
-					utils.StyleText{
-						Text:  strings.TrimSpace(string(result.Stderr)),
-						Style: &utils.Style.Warning,
-					})
-			}
-			summaryLines = append(summaryLines, utils.StyleText{Text: ""})
+		if result.Err != "" {
+			summary.ErrorCount++
+			summary.Errors = append(summary.Errors, result)
 		} else if len(result.Stderr) > 0 {
-			warnCount++
-			summaryLines = append(summaryLines,
-				utils.StyleText{
-					Text:  fmt.Sprintf("- %s: stderr:", result.TaskItem.ID),
-					Style: &utils.Style.Warning,
-				},
-				utils.StyleText{
-					Text:  strings.TrimSpace(string(result.Stderr)),
-					Style: &utils.Style.Warning,
-				},
-				utils.StyleText{Text: ""})
+			summary.WarningCount++
+			summary.Warnings = append(summary.Warnings, result)
 		}
 	}
 
-	summaryLines = append(summaryLines, utils.StyleText{
-		Text: fmt.Sprintf("%d successful (%d with warnings), %d error, %d total",
-			len(r.Results)-errCount, warnCount, errCount, len(r.Results)),
-		Style: &utils.Style.Text,
-	})
-
-	for _, line := range summaryLines {
-		fmt.Println(line.Render())
+	for _, result := range summary.ToStyledText() {
+		fmt.Println(result.Render())
 	}
 	if r.Options.OutputFile != "" {
-		f, err := os.OpenFile(r.Options.OutputFile, os.O_APPEND|os.O_WRONLY, 0600)
-		if err != nil {
-			return fmt.Errorf("failed to open output file: %v", err)
-		}
-		defer f.Close()
-		lines := make([]string, len(summaryLines))
-		for i, line := range summaryLines {
-			lines[i] = line.GetText()
-		}
-		if _, err := f.Write([]byte(strings.Join(lines, "\n"))); err != nil {
-			return fmt.Errorf("failed to write summary to output file: %v", err)
+		// JSON doesn't support multi documents, need to write after merging all results
+		if r.Options.OutputFormat == "json" {
+			jsonContent, err := json.MarshalIndent(map[string]any{
+				"results": r.Results,
+				"summary": summary,
+			}, "", "  ")
+			if err != nil {
+				return fmt.Errorf("failed to marshal summary to json: %v", err)
+			}
+			if err := os.WriteFile(r.Options.OutputFile, jsonContent, 0600); err != nil {
+				return fmt.Errorf("failed to write summary to file: %v", err)
+			}
+		} else {
+			f, err := os.OpenFile(r.Options.OutputFile, os.O_APPEND|os.O_WRONLY, 0600)
+			if err != nil {
+				return fmt.Errorf("failed to open output file: %v", err)
+			}
+			defer f.Close()
+			outputContent := ""
+			if r.Options.OutputFormat == "yaml" {
+				yamlContent, err := yaml.Marshal(summary)
+				if err != nil {
+					return fmt.Errorf("failed to marshal summary to yaml: %v", err)
+				}
+				outputContent = string(yamlContent)
+			} else {
+				outputContent = summary.ToText()
+			}
+			if _, err := f.Write([]byte("---\n" + outputContent)); err != nil {
+				return fmt.Errorf("failed to write summary to file: %v", err)
+			}
 		}
 		fmt.Printf("%s\n", utils.Style.Success.Render(fmt.Sprintf("Results are saved to file %s", r.Options.OutputFile)))
 	}
 
 	if r.Options.OutputDir != "" {
-		f, err := os.OpenFile(path.Join(r.Options.OutputDir, "summary.txt"), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
+		summaryFile := path.Join(r.Options.OutputDir, "summary"+utils.FileExt(r.Options.OutputFormat))
+		err := utils.PutFileWithFormat(summaryFile, summary, r.Options.OutputFormat, func() string {
+			return summary.ToText()
+		})
 		if err != nil {
-			return fmt.Errorf("failed to open summary file: %v", err)
-		}
-		defer f.Close()
-		lines := make([]string, len(summaryLines))
-		for i, line := range summaryLines {
-			lines[i] = line.GetText()
-		}
-		if _, err := f.Write([]byte(strings.Join(lines, "\n"))); err != nil {
-			return fmt.Errorf("failed to write summary to file: %v", err)
+			return fmt.Errorf("failed to save summary to file: %v", err)
 		}
 		fmt.Printf("%s\n", utils.Style.Success.Render(fmt.Sprintf("Results are saved to directory %s", r.Options.OutputDir)))
 	}
 
 	fmt.Printf("%s\n", utils.Style.Dim.Render("---"))
 
-	if errCount > 0 {
+	if summary.ErrorCount > 0 {
 		return errors.New("not all clusters were processed successfully")
 	}
 

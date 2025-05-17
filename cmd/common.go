@@ -30,7 +30,7 @@ func ParseKubeconfigFile(
 	kubeconfigFile string,
 	useCurrentContext bool,
 	contextFilterRegex *regexp.Regexp,
-) (targets []executor.RunTarget, err error) {
+) (targets []executor.Target, err error) {
 	logger.Infof("Parsing kubeconfig file %s", kubeconfigFile)
 
 	data, err := os.ReadFile(kubeconfigFile)
@@ -74,7 +74,7 @@ func ParseKubeconfigFileOrDir(
 	kubeconfigFilterRegex *regexp.Regexp,
 	useCurrentContext bool,
 	contextFilterRegex *regexp.Regexp,
-) (targets []executor.RunTarget, err error) {
+) (targets []executor.Target, err error) {
 	logger.Infof("Parsing kubeconfig file or directory %s", kubeconfigFileOrDir)
 
 	if strings.HasPrefix(kubeconfigFileOrDir, "~") {
@@ -83,13 +83,13 @@ func ParseKubeconfigFileOrDir(
 
 	if _, err := os.Stat(kubeconfigFileOrDir); os.IsNotExist(err) {
 		logger.Warnf("kubeconfig file %s does not exist", kubeconfigFileOrDir)
-		return []executor.RunTarget{}, nil
+		return []executor.Target{}, nil
 	}
 
 	info, err := os.Stat(kubeconfigFileOrDir)
 	if err != nil {
 		logger.Warnf("failed to stat kubeconfig file %s: %v", kubeconfigFileOrDir, err)
-		return []executor.RunTarget{}, nil
+		return []executor.Target{}, nil
 	}
 
 	if info.IsDir() {
