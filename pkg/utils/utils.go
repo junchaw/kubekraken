@@ -47,6 +47,23 @@ var Style = struct {
 		Foreground(lipgloss.Color("240")), // Gray
 }
 
+// StyleText is a struct that contains a text and a style, so that we can get both styled or unstyled text
+type StyleText struct {
+	Text  string
+	Style *lipgloss.Style
+}
+
+func (s StyleText) GetText() string {
+	return s.Text
+}
+
+func (s StyleText) Render() string {
+	if s.Style != nil {
+		return s.Style.Render(s.Text)
+	}
+	return s.Text
+}
+
 func Exec(name string, arg ...string) ([]byte, []byte, error) {
 	var stdout = bytes.Buffer{}
 	var stderr = bytes.Buffer{}

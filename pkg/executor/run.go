@@ -6,82 +6,9 @@ import (
 	"os"
 	"path"
 	"strings"
-	"sync"
 
 	"github.com/junchaw/kubekraken/pkg/utils"
-	"github.com/sirupsen/logrus"
 )
-
-type RunResult struct {
-	TaskItem *RunTarget
-
-	Err    error
-	Stdout []byte
-	Stderr []byte
-}
-
-func (r *RunResult) HasErrorOrWarning() bool {
-	return r.Err != nil || len(r.Stderr) > 0
-}
-
-type RunTarget struct {
-	ID         string
-	Kubeconfig string
-	Context    string
-
-	// Index is the index of the target during execution, will be set during execution
-	Index int
-}
-
-func NewTarget(kubeconfig, context string) RunTarget {
-	return RunTarget{
-		ID:         fmt.Sprintf("%s@%s", kubeconfig, context),
-		Kubeconfig: kubeconfig,
-		Context:    context,
-	}
-}
-
-type RunOptions struct {
-	Targets []RunTarget
-
-	Args []string
-
-	Workers int
-
-	OutputDir  string
-	OutputFile string
-	NoStdout   bool
-
-	Logger *logrus.Logger
-}
-
-type Run struct {
-	Options *RunOptions
-
-	Wg sync.WaitGroup
-
-	// Lock is used to avoid race condition when writing to stdout/stderr and files
-	Lock sync.Mutex
-
-	NextTarget chan *RunTarget
-
-	Counter int
-
-	Results map[string]RunResult
-
-	Logger *logrus.Logger
-}
-
-func NewRun(opts *RunOptions) *Run {
-	return &Run{
-		Options:    opts,
-		Wg:         sync.WaitGroup{},
-		Lock:       sync.Mutex{},
-		NextTarget: make(chan *RunTarget),
-		Results:    make(map[string]RunResult),
-		Logger:     opts.Logger,
-	}
-}
 
 func (r *Run) processOneResult(taskItem *RunTarget) *RunResult {
 	var args []string
@@ -113,10 +40,7 @@ func (r *Run) processOne(taskItem *RunTarget) {
 	r.Lock.Lock()
 	defer r.Lock.Unlock()
 
-	writeToFile := (r.Options.OutputFile != "" || r.Options.OutputDir != "")
-	writeToStdout := !writeToFile && !r.Options.NoStdout
-
-	if (writeToFile && result.HasErrorOrWarning()) || writeToStdout {
+	if result.HasErrorOrWarning() || !r.Options.NoStdout {
 		fmt.Println()
 		fmt.Println()
 		fmt.Println(utils.Style.Dim.Render("---"))
@@ -159,7 +83,8 @@ func (r *Run) processOne(taskItem *RunTarget) {
 		if _, err := f.Write(output); err != nil {
 			r.Logger.Fatalf("failed to append result to file: %v", err)
 		}
-	} else if r.Options.OutputDir != "" {
+	}
+	if r.Options.OutputDir != "" {
 		errFile := path.Join(r.Options.OutputDir, result.TaskItem.ID+".err.txt")
 		stdoutFile := path.Join(r.Options.OutputDir, result.TaskItem.ID+".stdout.txt")
 		stderrFile := path.Join(r.Options.OutputDir, result.TaskItem.ID+".stderr.txt")
@@ -177,15 +102,15 @@ func (r *Run) processOne(taskItem *RunTarget) {
 		if err := os.WriteFile(stderrFile, result.Stderr, 0600); err != nil {
 			r.Logger.Fatalf("failed to write stderr to file: %v", err)
 		}
-	} else {
-		// no output target specified, print to stdout
-		if !r.Options.NoStdout && len(result.Stdout) > 0 {
+	}
+	if !r.Options.NoStdout {
+		if len(result.Stdout) > 0 {
 			fmt.Println(utils.Style.Info.Render("STDOUT:"))
 			fmt.Println(utils.Style.Info.Render(strings.TrimSpace(string(result.Stdout))))
 		}
 	}
 
-	if (writeToFile && result.HasErrorOrWarning()) || writeToStdout {
+	if result.HasErrorOrWarning() || !r.Options.NoStdout {
 		fmt.Println(utils.Style.Text.Render(fmt.Sprintf("TASK END: %s (%d/%d)", taskItem.ID, taskItem.Index, len(r.Options.Targets))))
 		fmt.Println(utils.Style.Dim.Render("---"))
 	}
@@ -215,26 +140,30 @@ func (r *Run) Run() error {
 	if r.Options.OutputFile != "" {
 		outputDir := path.Dir(r.Options.OutputFile)
 		if err := os.MkdirAll(outputDir, 0755); err != nil {
-			r.Logger.Fatalf("failed to create output directory: %v", err)
+			return fmt.Errorf("failed to create output directory: %v", err)
 		}
 
 		// Create empty file if it doesn't exist
 		if _, err := os.Stat(r.Options.OutputFile); os.IsNotExist(err) {
 			if _, err := os.Create(r.Options.OutputFile); err != nil {
-				r.Logger.Fatalf("failed to create output file: %v", err)
+				return fmt.Errorf("failed to create output file: %v", err)
 			}
 		} else {
 			// Truncate existing file
 			if err := os.Truncate(r.Options.OutputFile, 0); err != nil {
-				r.Logger.Fatalf("failed to truncate output file: %v", err)
+				return fmt.Errorf("failed to truncate output file: %v", err)
 			}
 		}
 		r.Logger.Infof("output file: %s", r.Options.OutputFile)
 	}
 
 	if r.Options.OutputDir != "" {
+		// Empty the directory if it exists
+		if err := os.RemoveAll(r.Options.OutputDir); err != nil {
+			return fmt.Errorf("failed to remove output directory: %v", err)
+		}
 		if err := os.MkdirAll(r.Options.OutputDir, 0755); err != nil {
-			r.Logger.Fatalf("failed to create output directory: %v", err)
+			return fmt.Errorf("failed to create output directory: %v", err)
 		}
 		r.Logger.Infof("output directory: %s", r.Options.OutputDir)
 	}
@@ -255,10 +184,12 @@ func (r *Run) Run() error {
 
 	errCount := 0
 	warnCount := 0
-	fmt.Println()
-	fmt.Println()
-	fmt.Println(utils.Style.Dim.Render("---"))
-	fmt.Println(utils.Style.Text.Render("SUMMARY:"))
+	summaryLines := []utils.StyleText{
+		{Text: ""},
+		{Text: ""},
+		{Text: "---", Style: &utils.Style.Dim},
+		{Text: "SUMMARY:", Style: &utils.Style.Text},
+	}
 	for _, result := range r.Results {
 		if result.Err != nil {
 			errCount++
@@ -266,29 +197,72 @@ func (r *Run) Run() error {
 			if len(result.Stderr) > 0 {
 				stderrStub = ", stderr:"
 			}
-			fmt.Println(utils.Style.Warning.Render(fmt.Sprintf("- %s: error: %v%s", result.TaskItem.ID, result.Err.Error(), stderrStub)))
+			summaryLines = append(summaryLines, utils.StyleText{
+				Text:  fmt.Sprintf("- %s: error: %v%s", result.TaskItem.ID, result.Err.Error(), stderrStub),
+				Style: &utils.Style.Warning,
+			})
 			if len(result.Stderr) > 0 {
-				fmt.Println(utils.Style.Warning.Render(strings.TrimSpace(string(result.Stderr))))
+				summaryLines = append(summaryLines,
+					utils.StyleText{
+						Text:  strings.TrimSpace(string(result.Stderr)),
+						Style: &utils.Style.Warning,
+					})
 			}
-			fmt.Println()
+			summaryLines = append(summaryLines, utils.StyleText{Text: ""})
 		} else if len(result.Stderr) > 0 {
 			warnCount++
-			fmt.Println(utils.Style.Warning.Render(fmt.Sprintf("- %s: stderr:", result.TaskItem.ID)))
-			fmt.Println(utils.Style.Warning.Render(strings.TrimSpace(string(result.Stderr))))
-			fmt.Println()
+			summaryLines = append(summaryLines,
+				utils.StyleText{
+					Text:  fmt.Sprintf("- %s: stderr:", result.TaskItem.ID),
+					Style: &utils.Style.Warning,
+				},
+				utils.StyleText{
+					Text:  strings.TrimSpace(string(result.Stderr)),
+					Style: &utils.Style.Warning,
+				},
+				utils.StyleText{Text: ""})
 		}
 	}
 
-	summaryText := fmt.Sprintf("%d successful (%d with warnings), %d error, %d total",
-		len(r.Results)-errCount, warnCount, errCount, len(r.Results))
-	fmt.Printf("\n%s\n", utils.Style.Text.Render(summaryText))
+	summaryLines = append(summaryLines, utils.StyleText{
+		Text: fmt.Sprintf("%d successful (%d with warnings), %d error, %d total",
+			len(r.Results)-errCount, warnCount, errCount, len(r.Results)),
+		Style: &utils.Style.Text,
+	})
 
-	if r.Options.OutputDir != "" {
-		fmt.Printf("%s\n", utils.Style.Success.Render(fmt.Sprintf("all results are saved to %s", r.Options.OutputDir)))
+	for _, line := range summaryLines {
+		fmt.Println(line.Render())
+	}
+	if r.Options.OutputFile != "" {
+		f, err := os.OpenFile(r.Options.OutputFile, os.O_APPEND|os.O_WRONLY, 0600)
+		if err != nil {
+			return fmt.Errorf("failed to open output file: %v", err)
+		}
+		defer f.Close()
+		lines := make([]string, len(summaryLines))
+		for i, line := range summaryLines {
+			lines[i] = line.GetText()
+		}
+		if _, err := f.Write([]byte(strings.Join(lines, "\n"))); err != nil {
+			return fmt.Errorf("failed to write summary to output file: %v", err)
+		}
+		fmt.Printf("%s\n", utils.Style.Success.Render(fmt.Sprintf("Results are saved to file %s", r.Options.OutputFile)))
 	}
 
-	if r.Options.OutputFile != "" {
-		fmt.Printf("%s\n", utils.Style.Success.Render(fmt.Sprintf("all results are saved to %s", r.Options.OutputFile)))
+	if r.Options.OutputDir != "" {
+		f, err := os.OpenFile(path.Join(r.Options.OutputDir, "summary.txt"), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0600)
+		if err != nil {
+			return fmt.Errorf("failed to open summary file: %v", err)
+		}
+		defer f.Close()
+		lines := make([]string, len(summaryLines))
+		for i, line := range summaryLines {
+			lines[i] = line.GetText()
+		}
+		if _, err := f.Write([]byte(strings.Join(lines, "\n"))); err != nil {
+			return fmt.Errorf("failed to write summary to file: %v", err)
+		}
+		fmt.Printf("%s\n", utils.Style.Success.Render(fmt.Sprintf("Results are saved to directory %s", r.Options.OutputDir)))
 	}
 
 	fmt.Printf("%s\n", utils.Style.Dim.Render("---"))

@@ -90,9 +90,9 @@ func NewKrakenCmd() *cobra.Command {
 
 	cmd.PersistentFlags().IntVar(&opts.Workers, "workers", 99, "Number of workers to run concurrently")
 
-	cmd.PersistentFlags().StringVar(&opts.OutputDir, "output-dir", "", "Output directory for the results, will be ignored if --output-file is set")
-	cmd.PersistentFlags().StringVar(&opts.OutputFile, "output-file", "", "Output file for the results, has higher priority than --output-dir")
-	cmd.PersistentFlags().BoolVar(&opts.NoStdout, "no-stdout", false, "Do not print kubectl stdout (stderr will still be printed), will be ignored if --output-file or --output-dir is set")
+	cmd.PersistentFlags().StringVar(&opts.OutputDir, "output-dir", "", "Output directory for the results, kubekraken will save stdout/stderr/error to files under this directory")
+	cmd.PersistentFlags().StringVar(&opts.OutputFile, "output-file", "", "Output file for the results, kubekraken will save stdout/stderr/error to this file")
+	cmd.PersistentFlags().BoolVar(&opts.NoStdout, "no-stdout", false, "Do not print kubectl stdout (stderr will still be printed)")
 
 	// Add subcommands
 	cmd.AddCommand(NewListContextsCmd(&opts))
