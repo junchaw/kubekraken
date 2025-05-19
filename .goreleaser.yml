@@ -34,6 +34,12 @@ archives:
     files:
       - LICENSE
 
+brews:
+  - name: kubekraken
+    repository:
+      owner: junchaw
+      name: homebrew-awesome
+
 docker_manifests:
   - name_template: 'junchaw/kubekraken:{{ .Tag }}'
     image_templates:
