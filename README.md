@@ -19,6 +19,36 @@ kubekraken --context-filter "us-west-2-prd-.*" k -- rollout restart -n kube-syst
   <img src="docs/screenshot.png" alt="kubekraken screenshot" width="100%">
 </div>
 
+## Installation
+
+#### # With Homebrew
+
+```shell
+brew tap junchaw/awesome
+brew install kubekraken
+kubekraken -h
+```
+
+#### # With Docker
+
+```shell
+docker run junchaw/kubekraken -h
+```
+
+#### # Download from release page
+
+First, download tar file from the [release page](https://github.com/junchaw/kubekraken/releases).
+
+After downloading the tar file, extract it, then put `kubekraken` in your `PATH`.
+
+#### # Build from source
+
+```shell
+git clone https://github.com/junchaw/kubekraken.git
+cd kubekraken && make build
+./bin/kubekraken -h
+```
+
 ## Usage
 
 ```shell
@@ -67,16 +97,4 @@ Flags:
       --output-format string       Output format for the results (text, json) (default "text")
       --use-current-context        Only use the current context from the kubeconfig file, if set, --kubeconfig-filter will be ignored
       --workers int                Number of workers to run concurrently (default 99)
-```
-
-Run with docker:
-
-```shell
-docker run junchaw/kubekraken -h
-```
-
-Or run from source:
-
-```shell
-go run .
 ```
