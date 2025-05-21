@@ -87,15 +87,17 @@ Available Commands:
   list-contexts List available Kubernetes contexts
 
 Flags:
-      --context-filter string      Regex filter for context names (e.g. prd-.*), see --use-current-context if you want to use the default context
-  -h, --help                       help for kraken
-      --kubeconfig-files strings   Kubeconfig files, item could be directory or file, in case of directory, all files in the directory will be used, see --kubeconfig-filter (default [/Users/junchawu/.kube/config])
-      --kubeconfig-filter string   Regex filter for kubeconfig files, used with kubeconfig from directory, will not filter items specified in --kubeconfig-files (e.g. prd-.*\.yaml)
-      --no-stderr                  Do not print kubectl stderr
-      --no-stdout                  Do not print kubectl stdout
-      --output-dir string          Output directory for the results, kubekraken will save stdout/stderr/error to files under this directory
-      --output-file string         Output file for the results, kubekraken will save stdout/stderr/error to this file
-      --output-format string       Output format for the results (text, json) (default "text")
-      --use-current-context        Only use the current context from the kubeconfig file, if set, --kubeconfig-filter will be ignored
-      --workers int                Number of workers to run concurrently (default 99)
+      --context-exclude string      Regex exclude filter for context names (e.g. dev-.*)
+      --context-filter string       Regex filter for context names (e.g. prd-.*)
+  -h, --help                        help for kraken
+      --kubeconfig-exclude string   Regex exclude filter for kubeconfig files, used with kubeconfig from directory, will not filter items specified in --kubeconfig-files (e.g. dev-.*\.yaml)
+      --kubeconfig-files strings    Kubeconfig files, item could be directory or file, in case of directory, all files in the directory will be used, see --kubeconfig-filter (default [/Users/junchawu/.kube/config])
+      --kubeconfig-filter string    Regex filter for kubeconfig files, used with kubeconfig from directory, will not filter items specified in --kubeconfig-files (e.g. prd-.*\.yaml)
+      --no-stderr                   Do not print kubectl stderr
+      --no-stdout                   Do not print kubectl stdout
+      --output-dir string           Output directory for the results, kubekraken will save stdout/stderr/error to files under this directory
+      --output-file string          Output file for the results, kubekraken will save stdout/stderr/error to this file
+      --output-format string        Output format for the results (text, json) (default "text")
+      --use-current-context         Only use the current context from the kubeconfig file, this can be used with --context-filter and --context-exclude
+      --workers int                 Number of workers to run concurrently (default 99)
 ```

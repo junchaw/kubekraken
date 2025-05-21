@@ -30,6 +30,7 @@ func ParseKubeconfigFile(
 	kubeconfigFile string,
 	useCurrentContext bool,
 	contextFilterRegex *regexp.Regexp,
+	contextExcludeRegex *regexp.Regexp,
 ) (targets []executor.Target, err error) {
 	logger.Infof("Parsing kubeconfig file %s", kubeconfigFile)
 
@@ -44,25 +45,25 @@ func ParseKubeconfigFile(
 	}
 
 	for _, ctx := range config.Contexts {
-		// If useCurrentContext is true, only include the current context
-		if useCurrentContext {
-			if ctx.Name == config.CurrentContext {
-				logger.Infof("Found current context in kubeconfig file %s: %s", kubeconfigFile, ctx.Name)
-				targets = append(targets, executor.NewTarget(kubeconfigFile, ctx.Name))
-			} else {
-				logger.Debugf("Skipping context %s in kubeconfig file %s", ctx.Name, kubeconfigFile)
-			}
-		} else {
-			// if useCurrentContext is false
-
-			// If contextFilterRegex is not provided, include all contexts
-			if contextFilterRegex == nil || contextFilterRegex.MatchString(ctx.Name) {
-				logger.Infof("Found context matching filter in kubeconfig file %s: %s", kubeconfigFile, ctx.Name)
-				targets = append(targets, executor.NewTarget(kubeconfigFile, ctx.Name))
-			} else {
-				logger.Debugf("Skipping context %s in kubeconfig file %s", ctx.Name, kubeconfigFile)
-			}
+		// If useCurrentContext is true, only include the current context,
+		// note that filter and exclude are still applied.
+		if useCurrentContext && ctx.Name != config.CurrentContext {
+			logger.Debugf("Skipping non-current context %s in kubeconfig file %s", ctx.Name, kubeconfigFile)
+			continue
 		}
+
+		if contextFilterRegex != nil && !contextFilterRegex.MatchString(ctx.Name) {
+			logger.Debugf("Skipping context %s in kubeconfig file %s", ctx.Name, kubeconfigFile)
+			continue
+		}
+
+		if contextExcludeRegex != nil && contextExcludeRegex.MatchString(ctx.Name) {
+			logger.Debugf("Excluded context %s in kubeconfig file %s", ctx.Name, kubeconfigFile)
+			continue
+		}
+
+		logger.Infof("Found context matching filter in kubeconfig file %s: %s", kubeconfigFile, ctx.Name)
+		targets = append(targets, executor.NewTarget(kubeconfigFile, ctx.Name))
 	}
 
 	return targets, nil
@@ -72,8 +73,10 @@ func ParseKubeconfigFileOrDir(
 	logger *logrus.Logger,
 	kubeconfigFileOrDir string,
 	kubeconfigFilterRegex *regexp.Regexp,
+	kubeconfigExcludeRegex *regexp.Regexp,
 	useCurrentContext bool,
 	contextFilterRegex *regexp.Regexp,
+	contextExcludeRegex *regexp.Regexp,
 ) (targets []executor.Target, err error) {
 	logger.Infof("Parsing kubeconfig file or directory %s", kubeconfigFileOrDir)
 
@@ -107,8 +110,17 @@ func ParseKubeconfigFileOrDir(
 			if kubeconfigFilterRegex != nil && !kubeconfigFilterRegex.MatchString(filepath.Join(kubeconfigFileOrDir, file.Name())) {
 				continue
 			}
+			if kubeconfigExcludeRegex != nil && kubeconfigExcludeRegex.MatchString(filepath.Join(kubeconfigFileOrDir, file.Name())) {
+				continue
+			}
 
-			targetsInFile, err := ParseKubeconfigFile(logger, filepath.Join(kubeconfigFileOrDir, file.Name()), useCurrentContext, contextFilterRegex)
+			targetsInFile, err := ParseKubeconfigFile(
+				logger,
+				filepath.Join(kubeconfigFileOrDir, file.Name()),
+				useCurrentContext,
+				contextFilterRegex,
+				contextExcludeRegex,
+			)
 			if err != nil {
 				return nil, fmt.Errorf("failed to parse kubeconfig file %s: %v", filepath.Join(kubeconfigFileOrDir, file.Name()), err)
 			}
@@ -118,7 +130,13 @@ func ParseKubeconfigFileOrDir(
 	}
 
 	// is file
-	contextsInFile, err := ParseKubeconfigFile(logger, kubeconfigFileOrDir, useCurrentContext, contextFilterRegex)
+	contextsInFile, err := ParseKubeconfigFile(
+		logger,
+		kubeconfigFileOrDir,
+		useCurrentContext,
+		contextFilterRegex,
+		contextExcludeRegex,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse kubeconfig file %s: %v", kubeconfigFileOrDir, err)
 	}
