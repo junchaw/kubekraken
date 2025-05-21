@@ -13,10 +13,6 @@ type TaskResult struct {
 	Stderr string `json:"stderr" yaml:"stderr"`
 }
 
-func (r *TaskResult) HasErrorOrWarning() bool {
-	return r.Err != "" || len(r.Stderr) > 0
-}
-
 func (r *TaskResult) ToText(totalCount int) string {
 	output := fmt.Sprintf("\n---\nTASK START: %s (%d/%d)\n", r.TaskItem.ID, r.TaskItem.Index, totalCount)
 

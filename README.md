@@ -91,7 +91,8 @@ Flags:
   -h, --help                       help for kraken
       --kubeconfig-files strings   Kubeconfig files, item could be directory or file, in case of directory, all files in the directory will be used, see --kubeconfig-filter (default [/Users/junchawu/.kube/config])
       --kubeconfig-filter string   Regex filter for kubeconfig files, used with kubeconfig from directory, will not filter items specified in --kubeconfig-files (e.g. prd-.*\.yaml)
-      --no-stdout                  Do not print kubectl stdout (stderr will still be printed)
+      --no-stderr                  Do not print kubectl stderr
+      --no-stdout                  Do not print kubectl stdout
       --output-dir string          Output directory for the results, kubekraken will save stdout/stderr/error to files under this directory
       --output-file string         Output file for the results, kubekraken will save stdout/stderr/error to this file
       --output-format string       Output format for the results (text, json) (default "text")

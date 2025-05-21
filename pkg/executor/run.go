@@ -23,7 +23,8 @@ type RunOptions struct {
 	OutputDir    string
 	OutputFile   string
 	OutputFormat string
-	NoStdout     bool
+	PrintStdout  bool
+	PrintStderr  bool
 
 	Logger *logrus.Logger
 }

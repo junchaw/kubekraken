@@ -40,21 +40,22 @@ func (r *Run) processOne(taskItem *Target) {
 	r.Lock.Lock()
 	defer r.Lock.Unlock()
 
-	if result.HasErrorOrWarning() || !r.Options.NoStdout {
+	if r.Options.PrintStdout || (r.Options.PrintStderr && len(result.Stderr) > 0) || result.Err != "" {
 		fmt.Println()
 		fmt.Println()
 		fmt.Println(utils.Style.Dim.Render("---"))
 		fmt.Println(utils.Style.Text.Render(fmt.Sprintf("TASK START: %s (%d/%d)", taskItem.ID, taskItem.Index, len(r.Options.Targets))))
+	}
 
-		if result.Err != "" {
-			fmt.Println(utils.Style.Warning.Render("ERROR:"))
-			fmt.Println(utils.Style.Warning.Render(result.Err))
-		}
+	if result.Err != "" {
+		fmt.Println(utils.Style.Warning.Render("ERROR:"))
+		fmt.Println(utils.Style.Warning.Render(result.Err))
+	}
 
-		if len(result.Stderr) > 0 {
-			fmt.Println(utils.Style.Warning.Render("STDERR:"))
-			fmt.Println(utils.Style.Warning.Render(strings.TrimSpace(string(result.Stderr))))
-		}
+	// if there is an error, print stderr for troubleshooting
+	if result.Err != "" || (r.Options.PrintStderr && len(result.Stderr) > 0) {
+		fmt.Println(utils.Style.Warning.Render("STDERR:"))
+		fmt.Println(utils.Style.Warning.Render(strings.TrimSpace(string(result.Stderr))))
 	}
 
 	// JSON doesn't support multi documents, need to write after merging all results
@@ -95,12 +96,11 @@ func (r *Run) processOne(taskItem *Target) {
 			}
 		}
 
-		if len(result.Stdout) > 0 {
-			if err := utils.PutFileWithFormat(stdoutFile, result.Stdout, r.Options.OutputFormat, func() string {
-				return result.Stdout
-			}); err != nil {
-				r.Logger.Fatalf("failed to write stdout to file: %v", err)
-			}
+		// always write stdout to file, even if it's empty, so that we can see the task is successful
+		if err := utils.PutFileWithFormat(stdoutFile, result.Stdout, r.Options.OutputFormat, func() string {
+			return result.Stdout
+		}); err != nil {
+			r.Logger.Fatalf("failed to write stdout to file: %v", err)
 		}
 
 		if len(result.Stderr) > 0 {
@@ -112,14 +112,12 @@ func (r *Run) processOne(taskItem *Target) {
 		}
 	}
 
-	if !r.Options.NoStdout {
-		if len(result.Stdout) > 0 {
-			fmt.Println(utils.Style.Info.Render("STDOUT:"))
-			fmt.Println(utils.Style.Info.Render(strings.TrimSpace(string(result.Stdout))))
-		}
+	if r.Options.PrintStdout && len(result.Stdout) > 0 {
+		fmt.Println(utils.Style.Info.Render("STDOUT:"))
+		fmt.Println(utils.Style.Info.Render(strings.TrimSpace(string(result.Stdout))))
 	}
 
-	if result.HasErrorOrWarning() || !r.Options.NoStdout {
+	if r.Options.PrintStdout || (r.Options.PrintStderr && len(result.Stderr) > 0) || result.Err != "" {
 		fmt.Println(utils.Style.Text.Render(fmt.Sprintf("TASK END: %s (%d/%d)", taskItem.ID, taskItem.Index, len(r.Options.Targets))))
 		fmt.Println(utils.Style.Dim.Render("---"))
 	}

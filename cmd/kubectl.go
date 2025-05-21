@@ -18,7 +18,8 @@ func NewKubectlCmd(opts *KrakenOptions) *cobra.Command {
 				OutputDir:    opts.OutputDir,
 				OutputFile:   opts.OutputFile,
 				OutputFormat: opts.OutputFormat,
-				NoStdout:     opts.NoStdout,
+				PrintStdout:  !opts.NoStdout,
+				PrintStderr:  !opts.NoStderr,
 				Logger:       logger,
 			})
 			if err := kr.Run(); err != nil {

@@ -38,6 +38,7 @@ type KrakenOptions struct {
 	OutputFile   string
 	OutputFormat string
 	NoStdout     bool
+	NoStderr     bool
 
 	// KubeconfigFilterRegex is the regex filter for kubeconfig files, parsed after reading arguments and before running commands
 	KubeconfigFilterRegex *regexp.Regexp
@@ -94,8 +95,8 @@ func NewKrakenCmd() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.OutputDir, "output-dir", "", "Output directory for the results, kubekraken will save stdout/stderr/error to files under this directory")
 	cmd.PersistentFlags().StringVar(&opts.OutputFile, "output-file", "", "Output file for the results, kubekraken will save stdout/stderr/error to this file")
 	cmd.PersistentFlags().StringVar(&opts.OutputFormat, "output-format", "text", "Output format for the results (text, json)")
-	cmd.PersistentFlags().BoolVar(&opts.NoStdout, "no-stdout", false, "Do not print kubectl stdout (stderr will still be printed)")
-
+	cmd.PersistentFlags().BoolVar(&opts.NoStdout, "no-stdout", false, "Do not print kubectl stdout")
+	cmd.PersistentFlags().BoolVar(&opts.NoStderr, "no-stderr", false, "Do not print kubectl stderr")
 	// Add subcommands
 	cmd.AddCommand(NewListContextsCmd(&opts))
 	cmd.AddCommand(NewKubectlCmd(&opts))
