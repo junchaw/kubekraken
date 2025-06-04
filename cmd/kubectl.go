@@ -14,12 +14,14 @@ func NewKubectlCmd(opts *KrakenOptions) *cobra.Command {
 		Short:   "Run kubectl commands",
 		Run: func(cmd *cobra.Command, args []string) {
 			outputConditions := []executor.OutputCondition{}
-			for _, condition := range strings.Split(opts.OutputConditions, ",") {
-				parts := strings.SplitN(condition, ":", 2)
-				outputConditions = append(outputConditions, executor.OutputCondition{
-					Operator: parts[0],
-					Value:    parts[1],
-				})
+			if opts.OutputConditions != "" {
+				for condition := range strings.SplitSeq(opts.OutputConditions, ",") {
+					parts := strings.SplitN(condition, ":", 2)
+					outputConditions = append(outputConditions, executor.OutputCondition{
+						Operator: parts[0],
+						Value:    parts[1],
+					})
+				}
 			}
 			kr := executor.NewRun(&executor.RunOptions{
 				Targets:          opts.Targets,
