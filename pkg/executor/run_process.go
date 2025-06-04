@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/junchaw/kubekraken/pkg/utils"
-	"gopkg.in/yaml.v2"
 )
 
 func (r *Run) processOneResult(taskItem *Target) *TaskResult {
@@ -15,21 +14,55 @@ func (r *Run) processOneResult(taskItem *Target) *TaskResult {
 	args = append(args, "--kubeconfig", taskItem.Kubeconfig)
 	args = append(args, "--context", taskItem.Context)
 	args = append(args, r.Options.Args...)
-	stdout, stderr, err := utils.Exec("kubectl", args...)
-	if err != nil {
-		return &TaskResult{
-			TaskItem: taskItem,
-			Err:      err.Error(),
-			Stdout:   string(stdout),
-			Stderr:   string(stderr),
+	stdoutBytes, stderrBytes, kubectlErr := utils.Exec("kubectl", args...)
+
+	errString := ""
+	if kubectlErr != nil {
+		errString = kubectlErr.Error()
+	}
+	stdout := string(stdoutBytes)
+	stderr := string(stderrBytes)
+
+	hasStdout := len(stdout) > 0
+	hasStderr := len(stderr) > 0
+	hasErr := kubectlErr != nil
+
+	needToPrintStdout := hasErr || (r.Options.PrintStdout && hasStdout)
+	if !hasErr { // if there is error, we always print stdout, regardless of output condition
+		for _, outputCondition := range r.Options.OutputConditions {
+			if outputCondition.Operator == OutputConditionOperatorContains {
+				if !strings.Contains(stdout, outputCondition.Value) {
+					needToPrintStdout = false
+					break
+				}
+			} else if outputCondition.Operator == OutputConditionOperatorNotContains {
+				if strings.Contains(stdout, outputCondition.Value) {
+					needToPrintStdout = false
+					break
+				}
+			}
 		}
 	}
 
+	needToPrintStderr := hasErr || (r.Options.PrintStderr && hasStderr)
+
+	needToPrintErr := hasErr
+
 	return &TaskResult{
 		TaskItem: taskItem,
-		Err:      "",
-		Stdout:   string(stdout),
-		Stderr:   string(stderr),
+
+		Err:    errString,
+		Stdout: stdout,
+		Stderr: stderr,
+
+		HasErr:    hasErr,
+		HasStdout: hasStdout,
+		HasStderr: hasStderr,
+
+		NeedToPrintErr:      needToPrintErr,
+		NeedToPrintStdout:   needToPrintStdout,
+		NeedToPrintStderr:   needToPrintStderr,
+		NeedToPrintAnything: needToPrintErr || needToPrintStdout || needToPrintStderr,
 	}
 }
 
@@ -40,20 +73,20 @@ func (r *Run) processOne(taskItem *Target) {
 	r.Lock.Lock()
 	defer r.Lock.Unlock()
 
-	if r.Options.PrintStdout || (r.Options.PrintStderr && len(result.Stderr) > 0) || result.Err != "" {
+	if result.NeedToPrintAnything {
 		fmt.Println()
 		fmt.Println()
 		fmt.Println(utils.Style.Dim.Render("---"))
 		fmt.Println(utils.Style.Text.Render(fmt.Sprintf("TASK START: %s (%d/%d)", taskItem.ID, taskItem.Index, len(r.Options.Targets))))
 	}
 
-	if result.Err != "" {
+	if result.NeedToPrintErr {
 		fmt.Println(utils.Style.Warning.Render("ERROR:"))
 		fmt.Println(utils.Style.Warning.Render(result.Err))
 	}
 
 	// if there is an error, print stderr for troubleshooting
-	if result.Err != "" || (r.Options.PrintStderr && len(result.Stderr) > 0) {
+	if result.NeedToPrintStderr {
 		fmt.Println(utils.Style.Warning.Render("STDERR:"))
 		fmt.Println(utils.Style.Warning.Render(strings.TrimSpace(string(result.Stderr))))
 	}
@@ -62,11 +95,11 @@ func (r *Run) processOne(taskItem *Target) {
 	if r.Options.OutputFile != "" && r.Options.OutputFormat != "json" {
 		var output string
 		if r.Options.OutputFormat == "yaml" || r.Options.OutputFormat == "yml" {
-			yamlContent, err := yaml.Marshal(result)
+			yamlContent, err := result.ToYAMLInMultiDoc()
 			if err != nil {
 				r.Logger.Fatalf("failed to marshal result to yaml: %v", err)
 			}
-			output = "---\n" + string(yamlContent) + "\n"
+			output = string(yamlContent)
 		} else {
 			output = result.ToText(len(r.Options.Targets))
 		}
@@ -88,7 +121,7 @@ func (r *Run) processOne(taskItem *Target) {
 		stdoutFile := path.Join(r.Options.OutputDir, result.TaskItem.ID+".stdout"+ext)
 		stderrFile := path.Join(r.Options.OutputDir, result.TaskItem.ID+".stderr"+ext)
 
-		if result.Err != "" {
+		if result.NeedToPrintErr {
 			if err := utils.PutFileWithFormat(errFile, result.Err, r.Options.OutputFormat, func() string {
 				return result.Err
 			}); err != nil {
@@ -96,14 +129,15 @@ func (r *Run) processOne(taskItem *Target) {
 			}
 		}
 
-		// always write stdout to file, even if it's empty, so that we can see the task is successful
-		if err := utils.PutFileWithFormat(stdoutFile, result.Stdout, r.Options.OutputFormat, func() string {
-			return result.Stdout
-		}); err != nil {
-			r.Logger.Fatalf("failed to write stdout to file: %v", err)
+		if result.NeedToPrintStdout {
+			if err := utils.PutFileWithFormat(stdoutFile, result.Stdout, r.Options.OutputFormat, func() string {
+				return result.Stdout
+			}); err != nil {
+				r.Logger.Fatalf("failed to write stdout to file: %v", err)
+			}
 		}
 
-		if len(result.Stderr) > 0 {
+		if result.NeedToPrintStderr {
 			if err := utils.PutFileWithFormat(stderrFile, result.Stderr, r.Options.OutputFormat, func() string {
 				return result.Stderr
 			}); err != nil {
@@ -112,12 +146,12 @@ func (r *Run) processOne(taskItem *Target) {
 		}
 	}
 
-	if r.Options.PrintStdout && len(result.Stdout) > 0 {
+	if result.NeedToPrintStdout {
 		fmt.Println(utils.Style.Info.Render("STDOUT:"))
 		fmt.Println(utils.Style.Info.Render(strings.TrimSpace(string(result.Stdout))))
 	}
 
-	if r.Options.PrintStdout || (r.Options.PrintStderr && len(result.Stderr) > 0) || result.Err != "" {
+	if result.NeedToPrintAnything {
 		fmt.Println(utils.Style.Text.Render(fmt.Sprintf("TASK END: %s (%d/%d)", taskItem.ID, taskItem.Index, len(r.Options.Targets))))
 		fmt.Println(utils.Style.Dim.Render("---"))
 	}

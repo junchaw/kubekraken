@@ -12,7 +12,7 @@
 Kubekraken is a powerful CLI tool that unleashes multiple kubectl commands in parallel—tame your clusters with ease.
 
 ```shell
-kubekraken --context-filter "us-west-2-prd-.*" k -- rollout restart -n kube-system deploy/coredns
+kubekraken k -- get nodes
 ```
 
 <div align="center">
@@ -80,6 +80,11 @@ kubekraken --kubeconfig-files ./kubeconfigs --output-dir ./tmp/output -- get nod
 Other flags:
 
 ```shell
+Run command to multiple clusters
+
+Usage:
+  kraken [command]
+
 Available Commands:
   completion    Generate the autocompletion script for the specified shell
   help          Help about any command
@@ -95,9 +100,34 @@ Flags:
       --kubeconfig-filter string    Regex filter for kubeconfig files, used with kubeconfig from directory, will not filter items specified in --kubeconfig-files (e.g. prd-.*\.yaml)
       --no-stderr                   Do not print kubectl stderr
       --no-stdout                   Do not print kubectl stdout
+      --output-conditions string    Output condition for the results, see document for more details
       --output-dir string           Output directory for the results, kubekraken will save stdout/stderr/error to files under this directory
       --output-file string          Output file for the results, kubekraken will save stdout/stderr/error to this file
       --output-format string        Output format for the results (text, json) (default "text")
       --use-current-context         Only use the current context from the kubeconfig file, this can be used with --context-filter and --context-exclude
       --workers int                 Number of workers to run concurrently (default 99)
+
+Use "kraken [command] --help" for more information about a command.
+```
+
+#### Output conditions
+
+Output conditions are used to filter output, it's useful when you want to focus on specific output, e.g. pod is crashing.
+
+Output conditions has format like `operator1:value1,operator2:value2`.
+
+###### Operator: contains
+
+Filter output that contains specific string:
+
+```shell
+kubekraken --output-conditions "contains:ImagePullBackOff" k -- get pods
+```
+
+###### Operator: not-contains
+
+Filter output that does not contain specific string:
+
+```shell
+kubekraken --output-conditions "not-contains:Running" k -- get pods
 ```

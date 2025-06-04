@@ -13,6 +13,16 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+const (
+	OutputConditionOperatorContains    = "contains"
+	OutputConditionOperatorNotContains = "not-contains"
+)
+
+type OutputCondition struct {
+	Operator string
+	Value    string
+}
+
 type RunOptions struct {
 	Targets []Target
 
@@ -20,11 +30,12 @@ type RunOptions struct {
 
 	Workers int
 
-	OutputDir    string
-	OutputFile   string
-	OutputFormat string
-	PrintStdout  bool
-	PrintStderr  bool
+	OutputDir        string
+	OutputFile       string
+	OutputFormat     string
+	PrintStdout      bool
+	PrintStderr      bool
+	OutputConditions []OutputCondition
 
 	Logger *logrus.Logger
 }
@@ -127,7 +138,7 @@ func (r *Run) Run() error {
 		// JSON doesn't support multi documents, need to write after merging all results
 		if r.Options.OutputFormat == "json" {
 			jsonContent, err := json.MarshalIndent(map[string]any{
-				"results": r.Results,
+				"results": r.Results, // for JSON, we always print stdout, stderr and error, could be improved to consider print flags
 				"summary": summary,
 			}, "", "  ")
 			if err != nil {

@@ -52,7 +52,11 @@ func (s *RunSummary) ToStyledText() []utils.StyleText {
 		{Text: "SUMMARY:", Style: &utils.Style.Text},
 	}
 
+	errClusters := map[string]bool{} // we keep this map to avoid duplicated warning messages
+
 	for _, result := range s.Errors {
+		errClusters[result.TaskItem.ID] = true
+
 		stderrStub := ""
 		if len(result.Stderr) > 0 {
 			stderrStub = ", stderr:"
@@ -70,6 +74,9 @@ func (s *RunSummary) ToStyledText() []utils.StyleText {
 	}
 
 	for _, result := range s.Warnings {
+		if errClusters[result.TaskItem.ID] { // the warning should already be printed in the error section
+			continue
+		}
 		summaryLines = append(summaryLines, utils.StyleText{
 			Text:  fmt.Sprintf("- %s: stderr: %s", result.TaskItem.ID, strings.TrimSpace(string(result.Stderr))),
 			Style: &utils.Style.Warning,
