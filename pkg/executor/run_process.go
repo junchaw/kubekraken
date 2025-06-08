@@ -27,7 +27,7 @@ func (r *Run) processOneResult(taskItem *Target) *TaskResult {
 	hasStderr := len(stderr) > 0
 	hasErr := kubectlErr != nil
 
-	needToPrintStdout := hasErr || (r.Options.PrintStdout && hasStdout)
+	needToPrintStdout := hasErr || r.Options.PrintStdout
 	if !hasErr { // if there is error, we always print stdout, regardless of output condition
 		for _, outputCondition := range r.Options.OutputConditions {
 			if outputCondition.Operator == OutputConditionOperatorContains {
