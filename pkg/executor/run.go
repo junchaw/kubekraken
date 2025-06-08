@@ -122,10 +122,11 @@ func (r *Run) Run() error {
 		TotalCount:   len(r.Results),
 	}
 	for _, result := range r.Results {
-		if result.Err != "" {
+		if result.NeedToPrintErr {
 			summary.ErrorCount++
 			summary.Errors = append(summary.Errors, result)
-		} else if len(result.Stderr) > 0 {
+		}
+		if result.NeedToPrintStderr {
 			summary.WarningCount++
 			summary.Warnings = append(summary.Warnings, result)
 		}
